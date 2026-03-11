@@ -1,1 +1,9 @@
 txn_system
+/tmp/cs223p_*
+# Compiled binaries
+txn_system
+*.o
+*.a
+
+# RocksDB data dirs
+/tmp/cs223p_*
