@@ -1,84 +1,90 @@
 # CS 223P – Transaction Concurrency Control Project
 
-Multi-threaded transaction processing layer built on RocksDB, implementing and comparing Optimistic Concurrency Control (OCC) and Conservative Two-Phase Locking (Conservative 2PL).
+This project implements a multi-threaded transaction processing layer built on top of RocksDB. The system supports two concurrency control algorithms: Optimistic Concurrency Control (OCC) and Conservative Two-Phase Locking (Conservative 2PL).
 
----
+The goal of the project is to compare how these two approaches perform under different levels of concurrency and contention. The program runs experiments using multiple worker threads and simulated workloads, and then reports statistics such as throughput, retries, and response times.
 
-## Dependencies
+------------------------------------------------------------
 
-- **RocksDB** (and its compression dependencies): `librocksdb`, `libsnappy`, `libz`, `libbz2`, `liblz4`, `libzstd`
-- **GCC / Clang** with C++20 support
-- **pthreads**
+Dependencies
 
-On Ubuntu/Debian:
-```bash
+The following libraries are required to build and run the project:
+
+- RocksDB
+- Compression libraries used by RocksDB (snappy, zlib, bz2, lz4, zstd)
+- GCC or Clang with C++20 support
+- pthreads
+
+On Ubuntu or Debian systems, you can install the dependencies with:
+
 sudo apt-get install librocksdb-dev libsnappy-dev zlib1g-dev libbz2-dev liblz4-dev libzstd-dev
-```
 
----
+------------------------------------------------------------
 
-## Build
+Building the Project
 
-```bash
+To compile the program, run:
+
 make
-```
 
-Produces the `txn_system` binary. To clean:
-```bash
+This will produce the executable called:
+
+txn_system
+
+To remove compiled files and rebuild the project, run:
+
 make clean
-```
 
----
+------------------------------------------------------------
 
-## Running the Workloads
+Running the Program
 
-```bash
+The program takes two arguments:
+
 ./txn_system <input_file> <workload_number>
-```
 
-- `<input_file>` — path to the initial data file (INSERT/END format)
-- `<workload_number>` — `1` for the transfer workload, `2` for the TPC-C-like workload
+<input_file> is the path to the initial data file (INSERT/END format).  
+<workload_number> selects which workload to run.
 
-**Workload 1 (Transfer):**
-```bash
+Workload 1: Transfer workload
+
+Example:
 ./txn_system workloads/input1.txt 1
-```
 
-**Workload 2 (NewOrder + Payment):**
-```bash
+Workload 2: TPC-C style workload with NewOrder and Payment transactions
+
+Example:
 ./txn_system workloads/input2.txt 2
-```
 
-Each run automatically executes a full experiment suite comparing OCC and 2PL.
+Each run automatically executes a set of experiments comparing OCC and 2PL.
 
----
+------------------------------------------------------------
 
-## Setting Number of Threads and Contention Level
+Configuring Threads and Contention
 
-Thread count and contention parameters are configured directly in `src/main.cpp` via the `run_experiment()` calls. Each call has the signature:
+Thread count and contention settings are configured in src/main.cpp. Experiments are started using the function:
 
-```cpp
 run_experiment(label, runner, num_threads, txns_per_thread, hot_prob, hot_frac);
-```
 
-| Parameter | Description |
-|---|---|
-| `num_threads` | Number of concurrent worker threads |
-| `txns_per_thread` | Transactions each thread executes |
-| `hot_prob` | Probability (0.0–1.0) that a key is selected from the hot set |
-| `hot_frac` | Fraction of the keyspace that constitutes the hot set (e.g., 0.1 = 10%) |
+Parameter descriptions:
 
-The default experiment suite varies threads (1, 2, 4, 8) at fixed contention (50% hot probability, 10% hot fraction), then varies contention (0%, 30%, 70%, 100%) at fixed thread count (4).
+num_threads       Number of worker threads running concurrently  
+txns_per_thread   Number of transactions each thread executes  
+hot_prob          Probability (0.0–1.0) that a key is selected from the hot set  
+hot_frac          Fraction of the keyspace considered "hot" (for example 0.1 = 10%)
 
-To run a single custom configuration, add or modify a `run_experiment` call in `main()` and recompile.
+The default experiment setup varies the number of threads (1, 2, 4, 8) while keeping contention fixed, and then varies contention levels (0%, 30%, 70%, 100%) while keeping the number of threads fixed.
 
----
+If you want to run a custom configuration, modify or add a run_experiment call in main() and recompile.
 
-## Output Format
+------------------------------------------------------------
 
-For each configuration, the program prints:
+Program Output
 
-```
+For each experiment configuration, the program prints statistics for both concurrency control algorithms.
+
+Example output:
+
 === WL1 | threads=4 hot_prob=0.5 ===
   [OCC]
     Committed  : 800
@@ -90,8 +96,12 @@ For each configuration, the program prints:
     P95 Resp   : 0.91 ms
   [2PL]
     ...
-    [NewOrder] count=412 avg=0.29 ms
-    [Payment]  count=388 avg=0.35 ms
-```
 
-Per-transaction-type breakdown is shown when a workload has more than one transaction type (Workload 2).
+The output includes:
+
+- Number of committed transactions
+- Retry count (for OCC)
+- Throughput in transactions per second
+- Response time statistics (average, max, percentiles)
+
+For Workload 2, the program also prints statistics for each transaction type (NewOrder and Payment).
