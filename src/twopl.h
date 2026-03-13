@@ -1,4 +1,3 @@
-#include "transaction.h"
 #pragma once
 #include <mutex>
 #include <unordered_map>
@@ -6,6 +5,7 @@
 #include <atomic>
 #include <chrono>
 #include <thread>
+#include <random>
 #include "database.h"
 #include "transaction.h"
 
@@ -81,8 +81,11 @@ TxnStats TwoPL::run(int txn_id, TxnFunc func) {
         }
 
         // Failed to get all locks — release and wait before retry
+        // Random backoff to prevent livelock (transactions retrying in lockstep)
         aborted_++;
         stats.retries++;
-        std::this_thread::sleep_for(std::chrono::microseconds(200));
+        thread_local std::mt19937 rng(std::random_device{}());
+        std::uniform_int_distribution<int> backoff(100, 500);
+        std::this_thread::sleep_for(std::chrono::microseconds(backoff(rng)));
     }
 }

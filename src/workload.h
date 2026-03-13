@@ -30,6 +30,7 @@ struct WorkloadStats {
     double total_time_ms  = 0.0;
     double elapsed_sec    = 0.0;
     std::vector<double> response_times;
+    std::unordered_map<std::string, std::vector<double>> per_type_times;
     std::shared_ptr<std::mutex> mtx = std::make_shared<std::mutex>();
 
     double throughput()       const { return elapsed_sec > 0 ? committed / elapsed_sec : 0.0; }
@@ -109,6 +110,7 @@ WorkloadStats WorkloadRunner::run_impl(Protocol& proto, int num_threads, int txn
                 stats.retries       += s.retries;
                 stats.total_time_ms += s.response_time_ms;
                 stats.response_times.push_back(s.response_time_ms);
+                stats.per_type_times[txn_type.name].push_back(s.response_time_ms);
             }
         });
     }

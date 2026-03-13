@@ -1,6 +1,7 @@
 #include "workload.h"
 #include <iostream>
 #include <algorithm>
+#include <numeric>
 
 WorkloadRunner::WorkloadRunner(Database& db) : db_(db) {}
 
@@ -84,4 +85,23 @@ void WorkloadRunner::print_stats(const std::string& label, const WorkloadStats& 
               << " (" << s.retry_rate() << "%)\n";
     std::cout << "    Throughput : " << s.throughput() << " txns/sec\n";
     std::cout << "    Avg Resp   : " << s.avg_response_ms() << " ms\n";
+
+    // Response time distribution
+    if (!s.response_times.empty()) {
+        auto times = s.response_times;
+        std::sort(times.begin(), times.end());
+        std::cout << "    Max Resp   : " << times.back() << " ms\n";
+        std::cout << "    P50 Resp   : " << times[times.size() * 50 / 100] << " ms\n";
+        std::cout << "    P95 Resp   : " << times[times.size() * 95 / 100] << " ms\n";
+    }
+
+    // Per-transaction-type breakdown
+    if (s.per_type_times.size() > 1) {
+        for (const auto& [name, times] : s.per_type_times) {
+            if (times.empty()) continue;
+            double avg = std::accumulate(times.begin(), times.end(), 0.0) / times.size();
+            std::cout << "    [" << name << "] count=" << times.size()
+                      << " avg=" << avg << " ms\n";
+        }
+    }
 }
