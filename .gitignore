@@ -7,3 +7,5 @@ txn_system
 
 # RocksDB data dirs
 /tmp/cs223p_*
+Project
+Results/

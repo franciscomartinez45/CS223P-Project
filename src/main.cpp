@@ -1,9 +1,18 @@
 #include <iostream>
+#include <ctime>
+#include <filesystem>
 #include "database.h"
 #include "loader.h"
 #include "record.h"
 #include "transaction.h"
 #include "workload.h"
+
+static std::string make_timestamp() {
+    std::time_t t = std::time(nullptr);
+    char buf[32];
+    std::strftime(buf, sizeof(buf), "%Y-%m-%d_%H-%M-%S", std::localtime(&t));
+    return buf;
+}
 
 // ── Workload 1 transactions ───────────────────────────────────────────────
 void txn_transfer(Transaction& txn,
@@ -53,7 +62,8 @@ void txn_payment(Transaction& txn,
 void run_experiment(const std::string& wl_name,
                     WorkloadRunner& runner,
                     int threads, int txns,
-                    double hot_prob, double hot_frac) {
+                    double hot_prob, double hot_frac,
+                    const std::string& csv_path) {
     runner.set_contention(hot_prob, hot_frac);
     std::cout << "\n=== " << wl_name
               << " | threads=" << threads
@@ -61,9 +71,11 @@ void run_experiment(const std::string& wl_name,
 
     auto occ_stats = runner.run_occ(threads, txns);
     runner.print_stats("OCC", occ_stats);
+    runner.save_csv(csv_path, "OCC", wl_name, threads, hot_prob, occ_stats);
 
     auto pl_stats = runner.run_2pl(threads, txns);
     runner.print_stats("2PL", pl_stats);
+    runner.save_csv(csv_path, "2PL", wl_name, threads, hot_prob, pl_stats);
 }
 
 int main(int argc, char* argv[]) {
@@ -86,17 +98,20 @@ int main(int argc, char* argv[]) {
         runner.add_transaction("Transfer",
             {"FROM_KEY", "TO_KEY"}, txn_transfer);
 
+        std::filesystem::create_directories("Results/Workload1");
+        const std::string csv = "Results/Workload1/results_wl1-" + make_timestamp() + ".csv";
+
         // Vary threads at fixed contention
-        run_experiment("WL1", runner, 1, 200, 0.5, 0.1);
-        run_experiment("WL1", runner, 2, 200, 0.5, 0.1);
-        run_experiment("WL1", runner, 4, 200, 0.5, 0.1);
-        run_experiment("WL1", runner, 8, 200, 0.5, 0.1);
+        run_experiment("WL1", runner, 1, 200, 0.5, 0.1, csv);
+        run_experiment("WL1", runner, 2, 200, 0.5, 0.1, csv);
+        run_experiment("WL1", runner, 4, 200, 0.5, 0.1, csv);
+        run_experiment("WL1", runner, 8, 200, 0.5, 0.1, csv);
 
         // Vary contention at fixed threads
-        run_experiment("WL1", runner, 4, 200, 0.0, 0.1);
-        run_experiment("WL1", runner, 4, 200, 0.3, 0.1);
-        run_experiment("WL1", runner, 4, 200, 0.7, 0.1);
-        run_experiment("WL1", runner, 4, 200, 1.0, 0.1);
+        run_experiment("WL1", runner, 4, 200, 0.0, 0.1, csv);
+        run_experiment("WL1", runner, 4, 200, 0.3, 0.1, csv);
+        run_experiment("WL1", runner, 4, 200, 0.7, 0.1, csv);
+        run_experiment("WL1", runner, 4, 200, 1.0, 0.1, csv);
     }
 
     // ── Workload 2 ────────────────────────────────────────────────────────
@@ -113,17 +128,20 @@ int main(int argc, char* argv[]) {
         runner.add_transaction("Payment",
             {"W_KEY", "D_KEY", "C_KEY"}, txn_payment);
 
+        std::filesystem::create_directories("Results/Workload2");
+        const std::string csv = "Results/Workload2/results_wl2-" + make_timestamp() + ".csv";
+
         // Vary threads
-        run_experiment("WL2", runner, 1, 200, 0.5, 0.1);
-        run_experiment("WL2", runner, 2, 200, 0.5, 0.1);
-        run_experiment("WL2", runner, 4, 200, 0.5, 0.1);
-        run_experiment("WL2", runner, 8, 200, 0.5, 0.1);
+        run_experiment("WL2", runner, 1, 200, 0.5, 0.1, csv);
+        run_experiment("WL2", runner, 2, 200, 0.5, 0.1, csv);
+        run_experiment("WL2", runner, 4, 200, 0.5, 0.1, csv);
+        run_experiment("WL2", runner, 8, 200, 0.5, 0.1, csv);
 
         // Vary contention
-        run_experiment("WL2", runner, 4, 200, 0.0, 0.1);
-        run_experiment("WL2", runner, 4, 200, 0.3, 0.1);
-        run_experiment("WL2", runner, 4, 200, 0.7, 0.1);
-        run_experiment("WL2", runner, 4, 200, 1.0, 0.1);
+        run_experiment("WL2", runner, 4, 200, 0.0, 0.1, csv);
+        run_experiment("WL2", runner, 4, 200, 0.3, 0.1, csv);
+        run_experiment("WL2", runner, 4, 200, 0.7, 0.1, csv);
+        run_experiment("WL2", runner, 4, 200, 1.0, 0.1, csv);
     }
 
     return 0;

@@ -1,5 +1,6 @@
 #include "workload.h"
 #include <iostream>
+#include <fstream>
 #include <algorithm>
 #include <numeric>
 
@@ -76,6 +77,50 @@ WorkloadStats WorkloadRunner::run_occ(int num_threads, int txns_per_thread) {
 WorkloadStats WorkloadRunner::run_2pl(int num_threads, int txns_per_thread) {
     TwoPL proto(db_);
     return run_impl(proto, num_threads, txns_per_thread);
+}
+
+void WorkloadRunner::save_csv(const std::string& filepath,
+                              const std::string& protocol,
+                              const std::string& workload,
+                              int threads,
+                              double hot_prob,
+                              const WorkloadStats& s) {
+    // Check if file is new (write header) or existing (append only)
+    std::ifstream check(filepath);
+    bool write_header = !check.good() || check.peek() == std::ifstream::traits_type::eof();
+    check.close();
+
+    std::ofstream f(filepath, std::ios::app);
+    if (!f) {
+        std::cerr << "Warning: could not open " << filepath << " for writing\n";
+        return;
+    }
+
+    if (write_header)
+        f << "workload,protocol,threads,hot_prob,committed,retries,retry_rate_pct,"
+             "throughput_tps,avg_resp_ms,p50_resp_ms,p95_resp_ms,max_resp_ms\n";
+
+    double p50 = 0, p95 = 0, max_r = 0;
+    if (!s.response_times.empty()) {
+        auto times = s.response_times;
+        std::sort(times.begin(), times.end());
+        p50   = times[times.size() * 50 / 100];
+        p95   = times[times.size() * 95 / 100];
+        max_r = times.back();
+    }
+
+    f << workload << ","
+      << protocol << ","
+      << threads << ","
+      << hot_prob << ","
+      << s.committed << ","
+      << s.retries << ","
+      << s.retry_rate() << ","
+      << s.throughput() << ","
+      << s.avg_response_ms() << ","
+      << p50 << ","
+      << p95 << ","
+      << max_r << "\n";
 }
 
 void WorkloadRunner::print_stats(const std::string& label, const WorkloadStats& s) {

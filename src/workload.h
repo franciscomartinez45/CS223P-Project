@@ -65,6 +65,14 @@ public:
 
     void print_stats(const std::string& label, const WorkloadStats& s);
 
+    // Append one row of results to a CSV file (creates header on first write)
+    void save_csv(const std::string& filepath,
+                  const std::string& protocol,
+                  const std::string& workload,
+                  int threads,
+                  double hot_prob,
+                  const WorkloadStats& s);
+
 private:
     Database& db_;
     std::vector<TxnType> txn_types_;
