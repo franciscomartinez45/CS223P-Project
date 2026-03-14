@@ -56,7 +56,25 @@ Workload 2: TPC-C style workload with NewOrder and Payment transactions
 Example:
 ./txn_system workloads/input2.txt 2
 
-Each run automatically executes a set of experiments comparing OCC and 2PL.
+Each run automatically executes a set of experiments comparing OCC and 2PL. Results are saved as CSV files under the Results/ directory.
+
+Plotting Results
+
+After running the program, generate plots from the CSV results using:
+
+python plot_results.py <results_folder>
+
+To plot all workloads at once:
+
+python plot_results.py Results
+
+To plot a specific workload:
+
+python plot_results.py Results/Workload1
+
+Plots are saved to a plots/ subdirectory inside each workload folder. Requires Python 3 with pandas and matplotlib installed:
+
+pip install -r requirements.txt
 
 ------------------------------------------------------------
 
