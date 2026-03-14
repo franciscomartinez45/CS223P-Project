@@ -4,94 +4,79 @@
 #include <stdexcept>
 #include <sstream>
 
-// Generic record: stores any set of fields as strings.
-// Integer fields are stored as strings and converted on access.
-// Handles the format: {name: "Account-1", balance: 153, w_id: 1}
 struct Record {
     std::map<std::string, std::string> fields;
 
-    // Get a string field
-    std::string get_str(const std::string& key) const {
-        auto it = fields.find(key);
+    std::string get_str(const std::string& field_name) const {
+        auto it = fields.find(field_name);
         if (it == fields.end())
-            throw std::runtime_error("Field not found: " + key);
+            throw std::runtime_error("Field not found: " + field_name);
         return it->second;
     }
 
-    // Get an integer field
-    int get_int(const std::string& key) const {
-        return std::stoi(get_str(key));
+    int get_int(const std::string& field_name) const {
+        return std::stoi(get_str(field_name));
     }
 
-    // Set a string field
-    void set(const std::string& key, const std::string& val) {
-        fields[key] = val;
+    void set(const std::string& field_name, const std::string& value) {
+        fields[field_name] = value;
     }
 
-    // Set an integer field
-    void set(const std::string& key, int val) {
-        fields[key] = std::to_string(val);
+    void set(const std::string& field_name, int value) {
+        fields[field_name] = std::to_string(value);
     }
 
-    // Serialize back to {field: value, ...} format
     std::string serialize() const {
-        std::ostringstream oss;
-        oss << "{";
+        std::ostringstream output;
+        output << "{";
         bool first = true;
-        for (const auto& [k, v] : fields) {
-            if (!first) oss << ", ";
+        for (const auto& [field_name, value] : fields) {
+            if (!first) output << ", ";
             first = false;
-            // If value looks like a quoted string, keep quotes; else write raw
-            if (!v.empty() && v[0] == '"')
-                oss << k << ": " << v;
-            else
-                oss << k << ": " << v;
+            output << field_name << ": " << value;
         }
-        oss << "}";
-        return oss.str();
+        output << "}";
+        return output.str();
     }
 
-    // Parse from stored string: {name: "Account-1", balance: 153}
-    static Record deserialize(const std::string& s) {
-        Record r;
-        // Strip outer braces
-        auto start = s.find('{');
-        auto end   = s.rfind('}');
-        if (start == std::string::npos || end == std::string::npos)
-            throw std::runtime_error("Invalid record format: " + s);
-        std::string body = s.substr(start + 1, end - start - 1);
+    static Record deserialize(const std::string& raw) {
+        Record record;
 
-        // Split on commas, but NOT commas inside quotes
+        auto start = raw.find('{');
+        auto end   = raw.rfind('}');
+        if (start == std::string::npos || end == std::string::npos)
+            throw std::runtime_error("Invalid record format: " + raw);
+        std::string body = raw.substr(start + 1, end - start - 1);
+
         std::vector<std::string> tokens;
         std::string token;
         bool in_quotes = false;
-        for (char c : body) {
-            if (c == '"') in_quotes = !in_quotes;
-            if (c == ',' && !in_quotes) {
+        for (char character : body) {
+            if (character == '"') in_quotes = !in_quotes;
+            if (character == ',' && !in_quotes) {
                 tokens.push_back(token);
                 token.clear();
             } else {
-                token += c;
+                token += character;
             }
         }
         if (!token.empty()) tokens.push_back(token);
 
-        // Parse each "key: value" token
-        for (const auto& t : tokens) {
-            auto colon = t.find(':');
+        for (const auto& field_token : tokens) {
+            auto colon = field_token.find(':');
             if (colon == std::string::npos) continue;
-            std::string key = trim(t.substr(0, colon));
-            std::string val = trim(t.substr(colon + 1));
-            r.fields[key] = val;
+            std::string field_name = trim(field_token.substr(0, colon));
+            std::string value      = trim(field_token.substr(colon + 1));
+            record.fields[field_name] = value;
         }
-        return r;
+        return record;
     }
 
 private:
-    static std::string trim(const std::string& s) {
-        size_t a = s.find_first_not_of(" \t\r\n");
-        size_t b = s.find_last_not_of(" \t\r\n");
-        if (a == std::string::npos) return "";
-        return s.substr(a, b - a + 1);
+    static std::string trim(const std::string& str) {
+        size_t start = str.find_first_not_of(" \t\r\n");
+        size_t end   = str.find_last_not_of(" \t\r\n");
+        if (start == std::string::npos) return "";
+        return str.substr(start, end - start + 1);
     }
 };

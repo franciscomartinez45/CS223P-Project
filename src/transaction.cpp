@@ -1,8 +1,7 @@
 #include "transaction.h"
-#include <stdexcept>
 
-Transaction::Transaction(int id, Database& db)
-    : id_(id), db_(db), status_(TxnStatus::ACTIVE) {
+Transaction::Transaction(int transaction_id, Database& database)
+    : id_(transaction_id), db_(database), status_(TransactionStatus::ACTIVE) {
     start_timer();
 }
 
@@ -11,16 +10,13 @@ Record Transaction::read(const std::string& key) {
     if (it != write_buffer_.end())
         return Record::deserialize(it->second);
 
-    auto raw = db_.get(key);
-    if (!raw)
-        throw std::runtime_error("Transaction " + std::to_string(id_) +
-                                 ": key not found: " + key);
-    read_set_.push_back({key, *raw});
-    return Record::deserialize(*raw);
+    auto raw_value = db_.get(key);
+    read_set_.push_back({key, *raw_value});
+    return Record::deserialize(*raw_value);
 }
 
-void Transaction::write(const std::string& key, const Record& value) {
-    write_buffer_[key] = value.serialize();
+void Transaction::write(const std::string& key, const Record& record) {
+    write_buffer_[key] = record.serialize();
 }
 
 void Transaction::flush_writes() {
@@ -29,12 +25,12 @@ void Transaction::flush_writes() {
 }
 
 std::unordered_set<std::string> Transaction::get_all_keys() const {
-    std::unordered_set<std::string> keys;
+    std::unordered_set<std::string> all_keys;
     for (const auto& entry : read_set_)
-        keys.insert(entry.key);
-    for (const auto& [key, _] : write_buffer_)
-        keys.insert(key);
-    return keys;
+        all_keys.insert(entry.key);
+    for (const auto& [key, value] : write_buffer_)
+        all_keys.insert(key);
+    return all_keys;
 }
 
 void Transaction::start_timer() {
@@ -42,6 +38,6 @@ void Transaction::start_timer() {
 }
 
 double Transaction::elapsed_ms() const {
-    auto now = std::chrono::high_resolution_clock::now();
-    return std::chrono::duration<double, std::milli>(now - start_time_).count();
+    auto current_time = std::chrono::high_resolution_clock::now();
+    return std::chrono::duration<double, std::milli>(current_time - start_time_).count();
 }

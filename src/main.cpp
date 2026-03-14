@@ -1,148 +1,97 @@
 #include <iostream>
+#include <fstream>
 #include <ctime>
+#include <set>
 #include <filesystem>
 #include "database.h"
-#include "loader.h"
 #include "record.h"
 #include "transaction.h"
 #include "workload.h"
+#include "workload_interp.h"
 
 static std::string make_timestamp() {
-    std::time_t t = std::time(nullptr);
-    char buf[32];
-    std::strftime(buf, sizeof(buf), "%Y-%m-%d_%H-%M-%S", std::localtime(&t));
-    return buf;
+    std::time_t current_time = std::time(nullptr);
+    char timestamp_buffer[32];
+    std::strftime(timestamp_buffer, sizeof(timestamp_buffer), "%Y-%m-%d_%H-%M-%S", std::localtime(&current_time));
+    return timestamp_buffer;
 }
 
-// ── Workload 1 transactions ───────────────────────────────────────────────
-void txn_transfer(Transaction& txn,
-                  const std::unordered_map<std::string,std::string>& keys) {
-    Record from = txn.read(keys.at("FROM_KEY"));
-    Record to   = txn.read(keys.at("TO_KEY"));
-    from.set("balance", from.get_int("balance") - 1);
-    to.set("balance",   to.get_int("balance")   + 1);
-    txn.write(keys.at("FROM_KEY"), from);
-    txn.write(keys.at("TO_KEY"),   to);
-}
-
-// ── Workload 2 transactions ───────────────────────────────────────────────
-void txn_new_order(Transaction& txn,
-                   const std::unordered_map<std::string,std::string>& keys) {
-    Record d = txn.read(keys.at("D_KEY"));
-    d.set("next_o_id", d.get_int("next_o_id") + 1);
-    txn.write(keys.at("D_KEY"), d);
-
-    for (const auto& sk : {"S_KEY_1", "S_KEY_2", "S_KEY_3"}) {
-        Record s = txn.read(keys.at(sk));
-        s.set("qty",       s.get_int("qty")       - 1);
-        s.set("ytd",       s.get_int("ytd")       + 1);
-        s.set("order_cnt", s.get_int("order_cnt") + 1);
-        txn.write(keys.at(sk), s);
-    }
-}
-
-void txn_payment(Transaction& txn,
-                 const std::unordered_map<std::string,std::string>& keys) {
-    Record w = txn.read(keys.at("W_KEY"));
-    w.set("ytd", w.get_int("ytd") + 5);
-    txn.write(keys.at("W_KEY"), w);
-
-    Record d = txn.read(keys.at("D_KEY"));
-    d.set("ytd", d.get_int("ytd") + 5);
-    txn.write(keys.at("D_KEY"), d);
-
-    Record c = txn.read(keys.at("C_KEY"));
-    c.set("balance",     c.get_int("balance")     - 5);
-    c.set("ytd_payment", c.get_int("ytd_payment") + 5);
-    c.set("payment_cnt", c.get_int("payment_cnt") + 1);
-    txn.write(keys.at("C_KEY"), c);
-}
-
-// ── Helper: run one experiment ────────────────────────────────────────────
-void run_experiment(const std::string& wl_name,
-                    WorkloadRunner& runner,
-                    int threads, int txns,
-                    double hot_prob, double hot_frac,
-                    const std::string& csv_path) {
-    runner.set_contention(hot_prob, hot_frac);
-    std::cout << "\n=== " << wl_name
+void run_benchmark(const std::string& workload_name,
+                   WorkloadRunner& runner,
+                   int threads, int transactions,
+                   double hot_probability, double hot_fraction,
+                   const std::string& csv_filepath) {
+    runner.set_contention(hot_probability, hot_fraction);
+    std::cout << "\n=== " << workload_name
               << " | threads=" << threads
-              << " hot_prob=" << hot_prob << " ===\n";
+              << " hot_prob=" << hot_probability << " ===\n";
 
-    auto occ_stats = runner.run_occ(threads, txns);
-    runner.print_stats("OCC", occ_stats);
-    runner.save_csv(csv_path, "OCC", wl_name, threads, hot_prob, occ_stats);
+    auto occ_results = runner.run_occ(threads, transactions);
+    runner.print_stats("OCC", occ_results);
+    runner.save_csv(csv_filepath, "OCC", workload_name, threads, hot_probability, occ_results);
 
-    auto pl_stats = runner.run_2pl(threads, txns);
-    runner.print_stats("2PL", pl_stats);
-    runner.save_csv(csv_path, "2PL", wl_name, threads, hot_prob, pl_stats);
+    auto twopl_results = runner.run_2pl(threads, transactions);
+    runner.print_stats("2PL", twopl_results);
+    runner.save_csv(csv_filepath, "2PL", workload_name, threads, hot_probability, twopl_results);
 }
 
 int main(int argc, char* argv[]) {
     if (argc < 3) {
-        std::cerr << "Usage: " << argv[0] << " <input_file> <1|2>\n";
+        std::cerr << "Usage: " << argv[0]
+                  << " <data_file> <workload_file>\n";
         return 1;
     }
 
-    int workload_num = std::stoi(argv[2]);
+    std::string data_file     = argv[1];
+    std::string workload_file = argv[2];
 
-    // ── Workload 1 ────────────────────────────────────────────────────────
-    if (workload_num == 1) {
-        Database db("/tmp/cs223p_wl1");
-        Loader(db).load(argv[1]);
+    std::filesystem::path workload_path(workload_file);
+    std::string workload_label = workload_path.stem().string();
 
-        WorkloadRunner runner(db);
-        std::cout << "Building key pools:\n";
-        runner.build_key_pools({"A"});
-
-        runner.add_transaction("Transfer",
-            {"FROM_KEY", "TO_KEY"}, txn_transfer);
-
-        std::filesystem::create_directories("Results/Workload1");
-        const std::string csv = "Results/Workload1/results_wl1-" + make_timestamp() + ".csv";
-
-        // Vary threads at fixed contention
-        run_experiment("WL1", runner, 1, 200, 0.5, 0.1, csv);
-        run_experiment("WL1", runner, 2, 200, 0.5, 0.1, csv);
-        run_experiment("WL1", runner, 4, 200, 0.5, 0.1, csv);
-        run_experiment("WL1", runner, 8, 200, 0.5, 0.1, csv);
-
-        // Vary contention at fixed threads
-        run_experiment("WL1", runner, 4, 200, 0.0, 0.1, csv);
-        run_experiment("WL1", runner, 4, 200, 0.3, 0.1, csv);
-        run_experiment("WL1", runner, 4, 200, 0.7, 0.1, csv);
-        run_experiment("WL1", runner, 4, 200, 1.0, 0.1, csv);
+    Database db("/tmp/cs223p_" + workload_label);
+    {
+        std::ifstream file(data_file);
+        std::string line;
+        std::getline(file, line);
+        while (std::getline(file, line)) {
+            if (line == "END" || line.empty()) continue;
+            auto val_pos = line.find(", VALUE: ");
+            db.put(line.substr(5, val_pos - 5), line.substr(val_pos + 9));
+        }
     }
 
-    // ── Workload 2 ────────────────────────────────────────────────────────
-    else if (workload_num == 2) {
-        Database db("/tmp/cs223p_wl2");
-        Loader(db).load(argv[1]);
+    std::cout << "Parsing workload file: " << workload_file << "\n";
+    auto parsed_transactions = parse_workload_file(workload_file);
+    std::cout << "Found " << parsed_transactions.size() << " transaction type(s).\n";
 
-        WorkloadRunner runner(db);
-        std::cout << "Building key pools:\n";
-        runner.build_key_pools({"W", "D", "C", "S"});
+    std::set<std::string> key_prefixes;
+    for (const auto& parsed_transaction : parsed_transactions)
+        for (const auto& input : parsed_transaction.inputs)
+            key_prefixes.insert(prefix_for_input(input));
 
-        runner.add_transaction("NewOrder",
-            {"D_KEY", "S_KEY_1", "S_KEY_2", "S_KEY_3"}, txn_new_order);
-        runner.add_transaction("Payment",
-            {"W_KEY", "D_KEY", "C_KEY"}, txn_payment);
+    WorkloadRunner runner(db);
+    std::cout << "Building key pools:\n";
+    runner.build_key_pools(
+        std::vector<std::string>(key_prefixes.begin(), key_prefixes.end()));
 
-        std::filesystem::create_directories("Results/Workload2");
-        const std::string csv = "Results/Workload2/results_wl2-" + make_timestamp() + ".csv";
+    for (const auto& parsed_transaction : parsed_transactions)
+        runner.add_transaction(parsed_transaction.name, parsed_transaction.inputs, build_transaction_function(parsed_transaction));
 
-        // Vary threads
-        run_experiment("WL2", runner, 1, 200, 0.5, 0.1, csv);
-        run_experiment("WL2", runner, 2, 200, 0.5, 0.1, csv);
-        run_experiment("WL2", runner, 4, 200, 0.5, 0.1, csv);
-        run_experiment("WL2", runner, 8, 200, 0.5, 0.1, csv);
+    std::string results_directory = "Results/" + workload_label;
+    std::filesystem::create_directories(results_directory);
+    const std::string csv_filepath = results_directory + "/" + workload_label + "-"
+                                   + make_timestamp() + ".csv";
 
-        // Vary contention
-        run_experiment("WL2", runner, 4, 200, 0.0, 0.1, csv);
-        run_experiment("WL2", runner, 4, 200, 0.3, 0.1, csv);
-        run_experiment("WL2", runner, 4, 200, 0.7, 0.1, csv);
-        run_experiment("WL2", runner, 4, 200, 1.0, 0.1, csv);
-    }
+    run_benchmark(workload_label, runner, 1, 200, 0.5, 0.1, csv_filepath);
+    run_benchmark(workload_label, runner, 2, 200, 0.5, 0.1, csv_filepath);
+    run_benchmark(workload_label, runner, 4, 200, 0.5, 0.1, csv_filepath);
+    run_benchmark(workload_label, runner, 8, 200, 0.5, 0.1, csv_filepath);
+
+    run_benchmark(workload_label, runner, 4, 200, 0.0,  0.1, csv_filepath);
+    run_benchmark(workload_label, runner, 4, 200, 0.25, 0.1, csv_filepath);
+    run_benchmark(workload_label, runner, 4, 200, 0.5,  0.1, csv_filepath);
+    run_benchmark(workload_label, runner, 4, 200, 0.75, 0.1, csv_filepath);
+    run_benchmark(workload_label, runner, 4, 200, 1.0,  0.1, csv_filepath);
 
     return 0;
 }

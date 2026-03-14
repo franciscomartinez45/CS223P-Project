@@ -4,27 +4,23 @@
 #include <algorithm>
 #include <numeric>
 
-WorkloadRunner::WorkloadRunner(Database& db) : db_(db) {}
+WorkloadRunner::WorkloadRunner(Database& database) : db_(database) {}
 
 void WorkloadRunner::add_transaction(const std::string& name,
                                      const std::vector<std::string>& input_vars,
-                                     TxnFunc func) {
-    txn_types_.push_back({name, input_vars, func});
+                                     TransactionFunc function) {
+    transaction_types_.push_back({name, input_vars, function});
 }
 
-void WorkloadRunner::set_contention(double hot_prob, double hot_frac) {
-    hot_prob_ = hot_prob;
-    hot_frac_ = hot_frac;
+void WorkloadRunner::set_contention(double hot_probability, double hot_fraction) {
+    hot_prob_ = hot_probability;
+    hot_frac_ = hot_fraction;
 }
 
 void WorkloadRunner::build_key_pools(const std::vector<std::string>& prefixes) {
-    // Initialize empty pools for requested prefixes
-    for (const auto& p : prefixes)
-        key_pools_[p] = {};
-
-    // Scan all keys in DB and bucket by prefix
+    for (const auto& prefix : prefixes)
+        key_pools_[prefix] = {};
     db_.for_each_key([&](const std::string& key) {
-        // Prefix = everything before the first '_'
         auto underscore = key.find('_');
         if (underscore == std::string::npos) return;
         std::string prefix = key.substr(0, underscore);
@@ -32,8 +28,6 @@ void WorkloadRunner::build_key_pools(const std::vector<std::string>& prefixes) {
         if (it != key_pools_.end())
             it->second.push_back(key);
     });
-
-    // Print results and remove empty pools
     for (auto it = key_pools_.begin(); it != key_pools_.end(); ) {
         if (it->second.empty()) {
             it = key_pools_.erase(it);
@@ -45,104 +39,94 @@ void WorkloadRunner::build_key_pools(const std::vector<std::string>& prefixes) {
     }
 }
 
-std::string WorkloadRunner::prefix_for_var(const std::string& var) {
-    if (var[0] == 'W') return "W";
-    if (var[0] == 'D') return "D";
-    if (var[0] == 'C') return "C";
-    if (var[0] == 'S') return "S";
+std::string WorkloadRunner::prefix_for_var(const std::string& input_var) {
+    if (input_var[0] == 'W') return "W";
+    if (input_var[0] == 'D') return "D";
+    if (input_var[0] == 'C') return "C";
+    if (input_var[0] == 'S') return "S";
     return "A";
 }
 
-std::string WorkloadRunner::pick_key(const std::string& input_var, std::mt19937& rng) {
-    std::string prefix = prefix_for_var(input_var);
-    const auto& pool   = key_pools_.at(prefix);
-    int pool_size      = pool.size();
-    int hot_size       = std::max(1, (int)(pool_size * hot_frac_));
+std::string WorkloadRunner::pick_key(const std::string& input_var, std::mt19937& random_engine) {
+    std::string prefix   = prefix_for_var(input_var);
+    const auto& pool     = key_pools_.at(prefix);
+    int pool_size        = pool.size();
+    int hot_size         = std::max(1, (int)(pool_size * hot_frac_));
 
     std::uniform_real_distribution<double> coin(0.0, 1.0);
-    if (coin(rng) < hot_prob_) {
-        std::uniform_int_distribution<int> d(0, hot_size - 1);
-        return pool[d(rng)];
+    if (coin(random_engine) < hot_prob_) {
+        std::uniform_int_distribution<int> hot_dist(0, hot_size - 1);
+        return pool[hot_dist(random_engine)];
     } else {
-        std::uniform_int_distribution<int> d(0, pool_size - 1);
-        return pool[d(rng)];
+        std::uniform_int_distribution<int> full_dist(0, pool_size - 1);
+        return pool[full_dist(random_engine)];
     }
 }
 
-WorkloadStats WorkloadRunner::run_occ(int num_threads, int txns_per_thread) {
-    OCC proto(db_);
-    return run_impl(proto, num_threads, txns_per_thread);
+WorkloadStats WorkloadRunner::run_occ(int num_threads, int transactions_per_thread) {
+    OCC protocol(db_);
+    return run_impl(protocol, num_threads, transactions_per_thread);
 }
 
-WorkloadStats WorkloadRunner::run_2pl(int num_threads, int txns_per_thread) {
-    TwoPL proto(db_);
-    return run_impl(proto, num_threads, txns_per_thread);
+WorkloadStats WorkloadRunner::run_2pl(int num_threads, int transactions_per_thread) {
+    TwoPL protocol(db_);
+    return run_impl(protocol, num_threads, transactions_per_thread);
 }
 
 void WorkloadRunner::save_csv(const std::string& filepath,
                               const std::string& protocol,
                               const std::string& workload,
                               int threads,
-                              double hot_prob,
-                              const WorkloadStats& s) {
-    // Check if file is new (write header) or existing (append only)
+                              double hot_probability,
+                              const WorkloadStats& stats) {
     std::ifstream check(filepath);
     bool write_header = !check.good() || check.peek() == std::ifstream::traits_type::eof();
     check.close();
 
-    std::ofstream f(filepath, std::ios::app);
-    if (!f) {
-        std::cerr << "Warning: could not open " << filepath << " for writing\n";
-        return;
-    }
-
+    std::ofstream output_file(filepath, std::ios::app);
     if (write_header)
-        f << "workload,protocol,threads,hot_prob,committed,retries,retry_rate_pct,"
-             "throughput_tps,avg_resp_ms,p50_resp_ms,p95_resp_ms,max_resp_ms\n";
+        output_file << "workload,protocol,threads,hot_prob,committed,retries,retry_rate_pct,"
+                       "throughput_tps,avg_resp_ms,p50_resp_ms,p95_resp_ms,max_resp_ms\n";
 
-    double p50 = 0, p95 = 0, max_r = 0;
-    if (!s.response_times.empty()) {
-        auto times = s.response_times;
-        std::sort(times.begin(), times.end());
-        p50   = times[times.size() * 50 / 100];
-        p95   = times[times.size() * 95 / 100];
-        max_r = times.back();
+    double p50_ms = 0, p95_ms = 0, max_ms = 0;
+    if (!stats.response_times.empty()) {
+        auto sorted_times = stats.response_times;
+        std::sort(sorted_times.begin(), sorted_times.end());
+        p50_ms = sorted_times[sorted_times.size() * 50 / 100];
+        p95_ms = sorted_times[sorted_times.size() * 95 / 100];
+        max_ms = sorted_times.back();
     }
 
-    f << workload << ","
-      << protocol << ","
-      << threads << ","
-      << hot_prob << ","
-      << s.committed << ","
-      << s.retries << ","
-      << s.retry_rate() << ","
-      << s.throughput() << ","
-      << s.avg_response_ms() << ","
-      << p50 << ","
-      << p95 << ","
-      << max_r << "\n";
+    output_file << workload << ","
+                << protocol << ","
+                << threads << ","
+                << hot_probability << ","
+                << stats.committed << ","
+                << stats.retries << ","
+                << stats.retry_rate() << ","
+                << stats.throughput() << ","
+                << stats.avg_response_ms() << ","
+                << p50_ms << ","
+                << p95_ms << ","
+                << max_ms << "\n";
 }
 
-void WorkloadRunner::print_stats(const std::string& label, const WorkloadStats& s) {
+void WorkloadRunner::print_stats(const std::string& label, const WorkloadStats& stats) {
     std::cout << "  [" << label << "]\n";
-    std::cout << "    Committed  : " << s.committed << "\n";
-    std::cout << "    Retries    : " << s.retries
-              << " (" << s.retry_rate() << "%)\n";
-    std::cout << "    Throughput : " << s.throughput() << " txns/sec\n";
-    std::cout << "    Avg Resp   : " << s.avg_response_ms() << " ms\n";
-
-    // Response time distribution
-    if (!s.response_times.empty()) {
-        auto times = s.response_times;
-        std::sort(times.begin(), times.end());
-        std::cout << "    Max Resp   : " << times.back() << " ms\n";
-        std::cout << "    P50 Resp   : " << times[times.size() * 50 / 100] << " ms\n";
-        std::cout << "    P95 Resp   : " << times[times.size() * 95 / 100] << " ms\n";
+    std::cout << "    Committed  : " << stats.committed << "\n";
+    std::cout << "    Retries    : " << stats.retries
+              << " (" << stats.retry_rate() << "%)\n";
+    std::cout << "    Throughput : " << stats.throughput() << " transactions/sec\n";
+    std::cout << "    Avg Resp   : " << stats.avg_response_ms() << " ms\n";
+    if (!stats.response_times.empty()) {
+        auto sorted_times = stats.response_times;
+        std::sort(sorted_times.begin(), sorted_times.end());
+        std::cout << "    Max Resp   : " << sorted_times.back() << " ms\n";
+        std::cout << "    P50 Resp   : " << sorted_times[sorted_times.size() * 50 / 100] << " ms\n";
+        std::cout << "    P95 Resp   : " << sorted_times[sorted_times.size() * 95 / 100] << " ms\n";
     }
-
-    // Per-transaction-type breakdown
-    if (s.per_type_times.size() > 1) {
-        for (const auto& [name, times] : s.per_type_times) {
+    if (stats.per_type_times.size() > 1) {
+        for (const auto& [name, times] : stats.per_type_times) {
             if (times.empty()) continue;
             double avg = std::accumulate(times.begin(), times.end(), 0.0) / times.size();
             std::cout << "    [" << name << "] count=" << times.size()
