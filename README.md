@@ -88,14 +88,16 @@ Configuring Threads and Contention
 
 Thread count and contention settings are configured in src/main.cpp. Experiments are started using the function:
 
-run_benchmark(label, runner, num_threads, txns_per_thread, hot_prob, hot_frac);
+run_benchmark(workload_name, runner, threads, transactions, hot_probability, hot_fraction, csv_filepath);
 
 Parameter descriptions:
 
-num_threads       Number of worker threads running concurrently
-txns_per_thread   Number of transactions each thread executes
-hot_prob          Probability (0.0–1.0) that a key is selected from the hot set
-hot_frac          Fraction of the keyspace considered "hot" (for example 0.1 = 10%)
+workload_name     Label used in output and CSV results
+threads           Number of worker threads running concurrently
+transactions      Number of transactions each thread executes
+hot_probability   Probability (0.0–1.0) that a key is selected from the hot set
+hot_fraction      Fraction of the keyspace considered "hot" (for example 0.1 = 10%)
+csv_filepath      Path to the CSV file where results are appended
 
 The default experiment setup varies the number of threads (1, 2, 4, 8) while keeping contention fixed at 0.5, and then varies contention levels (0%, 25%, 50%, 75%, 100%) while keeping the number of threads fixed at 4.
 
