@@ -87,11 +87,11 @@ int main(int argc, char* argv[]) {
     run_benchmark(workload_label, runner, 4, 200, 0.5, 0.1, csv_filepath);
     run_benchmark(workload_label, runner, 8, 200, 0.5, 0.1, csv_filepath);
 
-    run_benchmark(workload_label, runner, 4, 200, 0.0,  0.1, csv_filepath);
-    run_benchmark(workload_label, runner, 4, 200, 0.25, 0.1, csv_filepath);
-    run_benchmark(workload_label, runner, 4, 200, 0.5,  0.1, csv_filepath);
-    run_benchmark(workload_label, runner, 4, 200, 0.75, 0.1, csv_filepath);
-    run_benchmark(workload_label, runner, 4, 200, 1.0,  0.1, csv_filepath);
+    run_benchmark(workload_label, runner, 4, 200, 0.0, 0.1, csv_filepath);
+    run_benchmark(workload_label, runner, 4, 200, 0.3, 0.1, csv_filepath);
+    run_benchmark(workload_label, runner, 4, 200, 0.5, 0.1, csv_filepath);
+    run_benchmark(workload_label, runner, 4, 200, 0.7, 0.1, csv_filepath);
+    run_benchmark(workload_label, runner, 4, 200, 1.0, 0.1, csv_filepath);
 
     return 0;
 }
